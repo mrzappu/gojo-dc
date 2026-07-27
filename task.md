@@ -1,0 +1,32 @@
+# GOJO BOT - Build Tasks
+
+- [x] package.json
+- [x] config.js
+- [x] index.js
+- [x] render.yaml
+- [x] utils/logger.js
+- [x] utils/embedBuilder.js
+- [x] utils/transcriptBuilder.js
+- [x] handlers/autoModHandler.js
+- [x] handlers/ticketHandler.js
+- [x] events/ready.js
+- [x] events/guildMemberAdd.js
+- [x] events/guildMemberRemove.js
+- [x] events/voiceStateUpdate.js
+- [x] events/messageCreate.js
+- [x] events/messageDelete.js
+- [x] events/messageUpdate.js
+- [x] events/interactionCreate.js
+- [x] commands/moderation/kick.js
+- [x] commands/moderation/ban.js
+- [x] commands/moderation/unban.js
+- [x] commands/moderation/timeout.js
+- [x] commands/moderation/untimeout.js
+- [x] commands/setup/rolesetup.js
+- [x] commands/setup/config-view.js
+- [x] commands/tickets/ticket.js
+- [x] commands/tickets/ticket-panel.js
+- [x] commands/tickets/ticket-manage.js
+- [x] README.md
+- [x] npm install (0 vulnerabilities)
+- [x] Syntax check ALL files — PASSED

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: gojo-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: node index.js
+    plan: free
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: WELCOME_CHANNEL
+        sync: false
+      - key: VC_LOG_CHANNEL
+        sync: false
+      - key: TEXT_LOG_CHANNEL
+        sync: false
+      - key: MOD_LOG_CHANNEL
+        sync: false
+      - key: TICKET_LOG_CHANNEL
+        sync: false
+      - key: TICKET_TRANSCRIPT_CHANNEL
+        sync: false
+      - key: TICKETS_OPEN_CATEGORY
+        sync: false
+      - key: TICKETS_CLOSED_CATEGORY
+        sync: false
+      - key: AUTO_ROLE_ID
+        sync: false
+      - key: TICKET_SUPPORT_ROLE
+        sync: false
+      - key: TICKET_ADMIN_ROLE
+        sync: false
