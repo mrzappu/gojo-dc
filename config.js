@@ -50,7 +50,7 @@ module.exports = {
     ROLES: {
         AUTO_ROLE:      process.env.AUTO_ROLE_ID      || '1525961584676049038',      // Given on join
         MUTED_ROLE:     process.env.MUTED_ROLE_ID     || '1531296667742244995',     // Muted role (optional)
-        TICKET_SUPPORT: process.env.TICKET_SUPPORT_ROLE || '1527296001529086063', // Can see tickets
+        TICKET_SUPPORT: process.env.TICKET_SUPPORT_ROLE || 'TICKET-ID', // Can see tickets
         TICKET_ADMIN:   process.env.TICKET_ADMIN_ROLE || 'TICKET_ADMIN_ROLE_ID_HERE',    // Full ticket control
     },
 
