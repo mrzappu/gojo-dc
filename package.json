@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "discord.js": "^14.16.3",
+    "dotenv": "^17.4.2",
     "express": "^4.18.2",
     "sequelize": "^6.37.8",
     "sqlite3": "^6.0.1"
@@ -17,7 +18,7 @@
     "nodemon": "^3.0.2"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": "20.x"
   },
   "author": "GOJO Bot",
   "license": "MIT"
