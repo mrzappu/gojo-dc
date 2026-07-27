@@ -2,6 +2,7 @@
 //  GOJO BOT — Entry Point
 //  Loads commands, events, keep-alive server, and logs in
 // ============================================================
+require('dotenv').config();
 
 const {
     Client,
