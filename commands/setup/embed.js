@@ -7,18 +7,14 @@
 const {
     SlashCommandBuilder,
     PermissionFlagsBits,
-    ContainerBuilder,
-    TextDisplayBuilder,
-    SeparatorBuilder,
-    SeparatorSpacingSize,
-    MediaGalleryBuilder,
-    MediaGalleryItemBuilder,
+    EmbedBuilder,
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
     MessageFlags,
 } = require('discord.js');
-const { CV2_FLAGS, replyError } = require('../../utils/embedBuilder');
+const config = require('../../config');
+const { replyError, replySuccess } = require('../../utils/embedBuilder');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -108,46 +104,17 @@ module.exports = {
         // Resolve image — uploaded attachment takes priority
         const finalImage = imageUpload ? imageUpload.url : imageUrl;
 
-        // ── Build the Container (Components V2) ─────────────
-        const container = new ContainerBuilder();
+        // ── Build the Standard Embed ─────────────
+        const embed = new EmbedBuilder().setColor(config.BOT_COLOR);
 
-        // Title
-        if (title) {
-            container.addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(`## ${title}`)
-            );
-            container.addSeparatorComponents(
-                new SeparatorBuilder()
-                    .setSpacing(SeparatorSpacingSize.Small)
-                    .setDivider(true)
-            );
-        }
-
-        // Description
-        if (description) {
-            container.addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(description)
-            );
-        }
-
-        // Image (MediaGallery for CV2)
-        if (finalImage) {
-            container.addSeparatorComponents(
-                new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
-            );
-            container.addMediaGalleryComponents(
-                new MediaGalleryBuilder().addItems(
-                    new MediaGalleryItemBuilder().setURL(finalImage)
-                )
-            );
-        }
+        if (title) embed.setTitle(title);
+        if (description) embed.setDescription(description);
+        if (finalImage) embed.setImage(finalImage);
+        if (footer) embed.setFooter({ text: footer });
 
         // Link Button
+        const components = [];
         if (buttonLabel) {
-            container.addSeparatorComponents(
-                new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
-            );
-
             const btn = new ButtonBuilder()
                 .setLabel(buttonLabel)
                 .setStyle(ButtonStyle.Link)
@@ -157,36 +124,18 @@ module.exports = {
                 btn.setEmoji(buttonEmoji);
             }
 
-            container.addActionRowComponents(
-                new ActionRowBuilder().addComponents(btn)
-            );
-        }
-
-        // Footer
-        if (footer) {
-            container.addSeparatorComponents(
-                new SeparatorBuilder()
-                    .setSpacing(SeparatorSpacingSize.Small)
-                    .setDivider(true)
-            );
-            container.addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(`-# ${footer}`)
-            );
+            const row = new ActionRowBuilder().addComponents(btn);
+            components.push(row);
         }
 
         // ── Send ────────────────────────────────────────────
         try {
             await targetChannel.send({
-                components: [container],
-                flags: CV2_FLAGS,
+                embeds: [embed],
+                components: components.length > 0 ? components : [],
             });
 
-            await interaction.editReply({
-                components: [new ContainerBuilder().addTextDisplayComponents(
-                    new TextDisplayBuilder().setContent(`✅ Embed sent to <#${targetChannel.id}>`)
-                )],
-                flags: CV2_FLAGS,
-            });
+            await replySuccess(interaction, `Embed successfully sent to <#${targetChannel.id}>`);
         } catch (err) {
             console.error('[Embed Command] Send error:', err);
             await interaction.editReply({
