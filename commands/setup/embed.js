@@ -11,11 +11,12 @@ const {
     TextDisplayBuilder,
     SeparatorBuilder,
     SeparatorSpacingSize,
+    MediaGalleryBuilder,
+    MediaGalleryItemBuilder,
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
     MessageFlags,
-    EmbedBuilder,
 } = require('discord.js');
 const config = require('../../config');
 const { CV2_FLAGS, replyError } = require('../../utils/embedBuilder');
@@ -93,6 +94,18 @@ module.exports = {
             );
         }
 
+        // Image (MediaGallery for CV2)
+        if (finalImage) {
+            container.addSeparatorComponents(
+                new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+            );
+            container.addMediaGalleryComponents(
+                new MediaGalleryBuilder().addItems(
+                    new MediaGalleryItemBuilder().setURL(finalImage)
+                )
+            );
+        }
+
         // Link Button
         if (buttonLabel) {
             container.addSeparatorComponents(
@@ -125,19 +138,10 @@ module.exports = {
             );
         }
 
-        // ── Image via Standard Embed ───────────────────────
-        // By adding the image as an embed alongside the CV2 components, 
-        // it renders as a large full-width banner instead of a small gallery item!
-        const embeds = [];
-        if (finalImage) {
-            embeds.push(new EmbedBuilder().setImage(finalImage).setColor(config.BOT_COLOR));
-        }
-
         // ── Send ────────────────────────────────────────────
         try {
             await targetChannel.send({
                 components: [container],
-                embeds: embeds,
                 flags: CV2_FLAGS,
             });
 
@@ -149,12 +153,7 @@ module.exports = {
             });
         } catch (err) {
             console.error('[Embed Command] Send error:', err);
-            await interaction.editReply({
-                components: [new ContainerBuilder().addTextDisplayComponents(
-                    new TextDisplayBuilder().setContent(`❌ Failed to send embed: ${err.message}`)
-                )],
-                flags: CV2_FLAGS,
-            });
+            await replyError(interaction, 'Failed to send embed. Check my permissions.');
         }
     },
 };
