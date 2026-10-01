@@ -25,6 +25,30 @@ const { ticketLogEmbed, CV2_FLAGS } = require('../utils/embedBuilder');
 const db = require('../utils/database');
 
 // ─────────────────────────────────────────────────────────────
+//  SAFE role resolver — returns the Role object or null.
+//  Prevents "Supplied parameter is not a cached User or Role"
+//  when a role ID is a placeholder, missing, or not yet cached.
+// ─────────────────────────────────────────────────────────────
+async function resolveRole(guild, roleId) {
+    if (!roleId) return null;
+    if (typeof roleId !== 'string') return null;
+    if (roleId.includes('_HERE') || roleId.includes('_ID_')) return null;
+    if (!/^\d{17,20}$/.test(roleId)) return null;
+
+    // Try cache first
+    let role = guild.roles.cache.get(roleId);
+    if (role) return role;
+
+    // Fall back to API fetch
+    try {
+        role = await guild.roles.fetch(roleId);
+        return role || null;
+    } catch {
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 //  Ticket control buttons row
 // ─────────────────────────────────────────────────────────────
 function getTicketButtonRow(claimed = false, closed = false) {
@@ -96,22 +120,48 @@ async function createTicket(interaction) {
 
     const channelName = `📜〢${user.username.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
 
+    // ── Resolve roles SAFELY before pushing to overwrites ──
+    const supportRole = await resolveRole(guild, supportRoleId);
+    const adminRole   = await resolveRole(guild, adminRoleId);
+
+    if (!supportRole) {
+        console.warn(`[TicketHandler] Support role "${supportRoleId}" not found in guild — skipping permission overwrite.`);
+    }
+    if (!adminRole) {
+        console.warn(`[TicketHandler] Admin role "${adminRoleId}" not found in guild — skipping permission overwrite.`);
+    }
+
     const permissionOverwrites = [
-        { id: guild.id,  deny: [PermissionFlagsBits.ViewChannel] },
-        { id: user.id,   allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+        { id: guild.id,  deny:  [PermissionFlagsBits.ViewChannel] },
+        { id: user.id,   allow: [
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.ReadMessageHistory,
+        ] },
     ];
 
-    if (supportRoleId && !supportRoleId.includes('_HERE')) {
+    if (supportRole) {
         permissionOverwrites.push({
-            id: supportRoleId,
-            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages],
+            id: supportRole.id,
+            allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.ManageMessages,
+            ],
         });
     }
 
-    if (adminRoleId && !adminRoleId.includes('_HERE')) {
+    if (adminRole) {
         permissionOverwrites.push({
-            id: adminRoleId,
-            allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageMessages, PermissionFlagsBits.ManageChannels],
+            id: adminRole.id,
+            allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.ManageMessages,
+                PermissionFlagsBits.ManageChannels,
+            ],
         });
     }
 
@@ -223,7 +273,7 @@ async function closeTicket(interaction) {
 
     // Move to closed category if configured
     const closedCatId = config.CATEGORIES.TICKETS_CLOSED;
-    if (closedCatId && !closedCatId.includes('_HERE')) {
+    if (closedCatId && !closedCatId.includes('_HERE') && /^\d{17,20}$/.test(closedCatId)) {
         await channel.setParent(closedCatId, { lockPermissions: false }).catch(() => {});
     }
 
