@@ -1,7 +1,8 @@
 // ============================================================
 //  GOJO BOT — SQLite Database (Sequelize)
 //  File: utils/database.js
-//  Stores: tickets — survives bot restarts with zero data loss
+//  Stores: tickets, member timeouts, game prices
+//  Survives bot restarts with zero data loss
 // ============================================================
 
 const { Sequelize, DataTypes, Op } = require('sequelize');
@@ -61,7 +62,7 @@ const Ticket = sequelize.define('Ticket', {
     },
 }, {
     tableName: 'tickets',
-    timestamps: true,       // createdAt + updatedAt tracked
+    timestamps: true,
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ const MemberTimeout = sequelize.define('MemberTimeout', {
         allowNull: false,
     },
     roles: {
-        type: DataTypes.TEXT, // Store as JSON string
+        type: DataTypes.TEXT,
         allowNull: false,
         defaultValue: '[]',
     },
@@ -95,6 +96,36 @@ const MemberTimeout = sequelize.define('MemberTimeout', {
     timestamps: true,
 });
 
+// ─────────────────────────────────────────────────────────────
+//  MODEL: GamePrice  (used by /game and /post)
+// ─────────────────────────────────────────────────────────────
+const GamePrice = sequelize.define('GamePrice', {
+    appId: {
+        type: DataTypes.STRING,
+        primaryKey: true,
+        allowNull: false,
+    },
+    gameName: {
+        type: DataTypes.STRING,
+        allowNull: false,
+    },
+    ourPrice: {
+        type: DataTypes.FLOAT,
+        allowNull: false,
+    },
+    updatedBy: {
+        type: DataTypes.STRING,
+        allowNull: false,
+    },
+    updatedAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+    },
+}, {
+    tableName: 'game_prices',
+    timestamps: false,
+});
 
 // ─────────────────────────────────────────────────────────────
 //  HELPERS
@@ -135,7 +166,6 @@ async function getAllTickets() {
 }
 
 async function saveMemberTimeout(data) {
-    // Upsert or create
     return MemberTimeout.create(data);
 }
 
@@ -157,21 +187,47 @@ async function getExpiredTimeouts() {
     });
 }
 
+// ── Game price helpers ──────────────────────────────────────
+async function saveGamePrice(data) {
+    // data: { appId, gameName, ourPrice, updatedBy }
+    const payload = {
+        appId: String(data.appId),
+        gameName: String(data.gameName),
+        ourPrice: Number(data.ourPrice),
+        updatedBy: String(data.updatedBy),
+        updatedAt: new Date(),
+    };
+    await GamePrice.upsert(payload);
+    return payload;
+}
+
+async function getGamePrice(appId) {
+    return GamePrice.findByPk(String(appId));
+}
+
+async function deleteGamePrice(appId) {
+    return GamePrice.destroy({ where: { appId: String(appId) } });
+}
+
 module.exports = {
     sequelize,
     Ticket,
+    MemberTimeout,
+    GamePrice,
     initDatabase,
     saveTicket,
     getTicket,
     getOpenTicketByUser,
     updateTicket,
-    deleteTicket: deleteTicket,
+    deleteTicket,
     getAllOpenTickets,
     getAllTickets,
-    MemberTimeout,
     saveMemberTimeout,
     getMemberTimeout,
     deleteMemberTimeout,
     getExpiredTimeouts,
+    saveGamePrice,
+    getGamePrice,
+    deleteGamePrice,
     Op,
 };
