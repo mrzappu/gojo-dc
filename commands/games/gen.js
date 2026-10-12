@@ -2,22 +2,24 @@
 //  COMMAND: /gen
 //  Admin-only. Generates a zipped package for a Steam App ID
 //  (depot manifests + Lua scripts, DLC included when available).
+//  Uses Components V2 with a FileBuilder so the zip is a
+//  downloadable file inside the card.
 // ============================================================
 
 const {
     SlashCommandBuilder,
-    EmbedBuilder,
+    ContainerBuilder,
+    TextDisplayBuilder,
+    SeparatorBuilder,
+    SeparatorSpacingSize,
+    FileBuilder,
     AttachmentBuilder,
     PermissionFlagsBits,
+    MessageFlags,
 } = require('discord.js');
 
 const { buildGenPackage, BRAND } = require('../../utils/steamManifest');
-const config = require('../../config');
-const { replyError } = require('../../utils/embedBuilder');
-
-function hexToInt(hex) {
-    return parseInt(String(hex).replace('#', ''), 16);
-}
+const { CV2_FLAGS, replyError } = require('../../utils/embedBuilder');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -58,30 +60,54 @@ module.exports = {
                     .join('\n')
                 : '*No DLC entries found for this app.*';
 
-            const embed = new EmbedBuilder()
-                .setColor(hexToInt(config.BOT_COLOR || '#00d2ff'))
-                .setTitle('Package Ready')
-                .setDescription(
+            const container = new ContainerBuilder()
+                .addTextDisplayComponents(
+                    new TextDisplayBuilder().setContent('## Package Ready')
+                )
+                .addSeparatorComponents(
+                    new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
+                )
+                .addTextDisplayComponents(new TextDisplayBuilder().setContent(
                     `**App ID:** \`${appid}\`\n` +
                     `**Name:** ${result.mainName}\n` +
                     `**Main depots:** ${result.depotCount}\n` +
                     `**DLC included:** ${result.dlcList.length}\n` +
                     `**File:** \`${result.fileName}\``
+                ))
+                .addSeparatorComponents(
+                    new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
                 )
-                .addFields({ name: 'DLC', value: dlcSummary })
-                .setFooter({ text: BRAND })
-                .setTimestamp();
+                .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+                    `**DLC**\n${dlcSummary}`
+                ));
 
             if (result.warnings.length) {
-                embed.addFields({
-                    name: 'Notes',
-                    value: result.warnings.map(w => `• ${w}`).join('\n'),
-                });
+                container.addSeparatorComponents(
+                    new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+                );
+                container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+                    `**Notes**\n${result.warnings.map(w => `• ${w}`).join('\n')}`
+                ));
             }
 
+            container.addSeparatorComponents(
+                new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
+            );
+            container.addFileComponents(
+                new FileBuilder().setURL(`attachment://${result.fileName}`)
+            );
+
+            container.addSeparatorComponents(
+                new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
+            );
+            container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
+                `-# ${BRAND}`
+            ));
+
             await interaction.editReply({
-                embeds: [embed],
+                components: [container],
                 files: [attachment],
+                flags: CV2_FLAGS,
             });
         } catch (err) {
             console.error('[gen] failed:', err);
