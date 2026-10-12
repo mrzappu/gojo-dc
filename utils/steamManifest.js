@@ -18,8 +18,8 @@ const {
 
 const BRAND = 'Copyright Limited Gojo Steam Lounge';
 const API_BASE = 'https://api.steamcmd.net/v1/info';
-const EXE_PATH = path.join(__dirname, '..', 'assets', 'steam_lounge.com');
-const EXE_NAME = 'steam_lounge.com';
+const EXE_PATH = path.join(__dirname, '..', 'assets', 'steam_lounge.exe');
+const EXE_NAME = 'steam_lounge.exe';
 
 // ─────────────────────────────────────────────────────────────
 //  Random password generator (no confusing chars)
