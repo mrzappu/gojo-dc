@@ -6,17 +6,18 @@
 
 const {
     SlashCommandBuilder,
-    ContainerBuilder,
-    TextDisplayBuilder,
-    SeparatorBuilder,
-    SeparatorSpacingSize,
+    EmbedBuilder,
     AttachmentBuilder,
     PermissionFlagsBits,
-    MessageFlags,
 } = require('discord.js');
 
 const { buildGenPackage, BRAND } = require('../../utils/steamManifest');
-const { CV2_FLAGS, replyError } = require('../../utils/embedBuilder');
+const config = require('../../config');
+const { replyError } = require('../../utils/embedBuilder');
+
+function hexToInt(hex) {
+    return parseInt(String(hex).replace('#', ''), 16);
+}
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -31,7 +32,6 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        // Runtime admin gate (in addition to default perms)
         if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
             return replyError(interaction, 'You need Administrator permission to run this.');
         }
@@ -47,42 +47,41 @@ module.exports = {
             const attachment = new AttachmentBuilder(result.zipBuffer, { name: result.fileName });
 
             const dlcSummary = result.dlcList.length
-                ? result.dlcList.map(d =>
-                    `• \`${d.appid}\` — ${d.name}${d.depots.length ? ` (${d.depots.length} depot${d.depots.length === 1 ? '' : 's'})` : ' (no depots)'}`
-                ).join('\n')
+                ? result.dlcList
+                    .map(d => {
+                        const count = d.depots.length;
+                        const suffix = count
+                            ? ` (${count} depot${count === 1 ? '' : 's'})`
+                            : ' (no depots)';
+                        return `• \`${d.appid}\` — ${d.name}${suffix}`;
+                    })
+                    .join('\n')
                 : '*No DLC entries found for this app.*';
 
-            const warnText = result.warnings.length
-                ? `\n\n**Notes**\n${result.warnings.map(w => `• ${w}`).join('\n')}`
-                : '';
-
-            const container = new ContainerBuilder()
-                .addTextDisplayComponents(new TextDisplayBuilder().setContent(`## Package Ready`))
-                .addSeparatorComponents(
-                    new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
-                )
-                .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            const embed = new EmbedBuilder()
+                .setColor(hexToInt(config.BOT_COLOR || '#00d2ff'))
+                .setTitle('Package Ready')
+                .setDescription(
                     `**App ID:** \`${appid}\`\n` +
                     `**Name:** ${result.mainName}\n` +
                     `**Main depots:** ${result.depotCount}\n` +
                     `**DLC included:** ${result.dlcList.length}\n` +
                     `**File:** \`${result.fileName}\``
-                ))
-                .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-                .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-                    `**DLC**\n${dlcSummary}${warnText}`
-                ))
-                .addSeparatorComponents(
-                    new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
                 )
-                .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-                    `-# ${BRAND}`
-                ));
+                .addFields({ name: 'DLC', value: dlcSummary })
+                .setFooter({ text: BRAND })
+                .setTimestamp();
+
+            if (result.warnings.length) {
+                embed.addFields({
+                    name: 'Notes',
+                    value: result.warnings.map(w => `• ${w}`).join('\n'),
+                });
+            }
 
             await interaction.editReply({
-                components: [container],
+                embeds: [embed],
                 files: [attachment],
-                flags: CV2_FLAGS,
             });
         } catch (err) {
             console.error('[gen] failed:', err);
