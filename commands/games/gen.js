@@ -70,7 +70,7 @@ module.exports = {
                     `**Main depots:** ${result.depotCount}\n` +
                     `**DLC included:** ${result.dlcList.length}\n` +
                     `**File:** \`${result.fileName}\`\n` +
-                    `**Loader EXE:** ${result.hasExe ? 'Included' : 'Missing (place at assets/steam_lounge.com)'}`
+                    `**Loader EXE:** ${result.hasExe ? 'Included' : 'Missing (place at assets/steam_lounge.exe)'}`
                 ))
                 .addSeparatorComponents(
                     new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
