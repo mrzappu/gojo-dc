@@ -1,8 +1,8 @@
 // ============================================================
 //  GOJO BOT — Steam Depot / Manifest Utility
-//  Uses api.steamcmd.net (public anonymous mirror) to fetch
-//  app + DLC depot manifests and build SteamTools-style Lua.
-//  Bundles a Windows loader EXE + password-protected ZIP.
+//  Fetches depot manifests from api.steamcmd.net and depot
+//  decryption keys from public ManifestHub depotkeys.json
+//  mirrors. Builds SteamTools Lua + password-protected ZIP.
 // ============================================================
 
 const fs = require('fs');
@@ -20,6 +20,16 @@ const BRAND = 'Copyright Limited Gojo Steam Lounge';
 const API_BASE = 'https://api.steamcmd.net/v1/info';
 const EXE_PATH = path.join(__dirname, '..', 'assets', 'steam_lounge.exe');
 const EXE_NAME = 'steam_lounge.exe';
+
+// ─────────────────────────────────────────────────────────────
+//  Public depotkeys.json mirrors (ManifestHub forks)
+//  These are raw.githubusercontent URLs. Fetched and merged.
+// ─────────────────────────────────────────────────────────────
+const DEPOTKEY_SOURCES = [
+    'https://raw.githubusercontent.com/fylsdy/ManifestHub/main/depotkeys.json',
+    'https://raw.githubusercontent.com/wsxsdyx/ManifestHub1/main/depotkeys.json',
+    'https://raw.githubusercontent.com/SteamAutoCracks/ManifestHub/main/depotkeys.json',
+];
 
 // ─────────────────────────────────────────────────────────────
 //  Random password generator (no confusing chars)
@@ -46,6 +56,44 @@ function loadExe() {
         console.warn('[steamManifest] Failed to read EXE:', e.message);
         return null;
     }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Fetch + merge depotkeys.json from all sources
+//  Returns Map<depotId(string), hexKey(string)>
+// ─────────────────────────────────────────────────────────────
+async function fetchDepotKeys() {
+    const merged = new Map();
+
+    for (const url of DEPOTKEY_SOURCES) {
+        try {
+            const r = await fetch(url, {
+                headers: { 'User-Agent': 'GOJO-Steam-Manifest/1.0' },
+            });
+            if (!r.ok) {
+                console.warn(`[steamManifest] depotkeys source HTTP ${r.status}: ${url}`);
+                continue;
+            }
+            const json = await r.json();
+            if (!json || typeof json !== 'object') continue;
+
+            let added = 0;
+            for (const [depotId, key] of Object.entries(json)) {
+                if (!/^\d+$/.test(depotId)) continue;
+                if (typeof key !== 'string') continue;
+                if (!/^[0-9a-fA-F]{64}$/.test(key)) continue;
+                if (!merged.has(depotId)) {
+                    merged.set(depotId, key);
+                    added++;
+                }
+            }
+            console.log(`[steamManifest] Loaded ${added} keys from ${url} (total ${merged.size})`);
+        } catch (e) {
+            console.warn(`[steamManifest] depotkeys fetch failed (${url}):`, e.message);
+        }
+    }
+
+    return merged;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -84,8 +132,6 @@ async function fetchDlcAppIds(appid) {
 
 // ─────────────────────────────────────────────────────────────
 //  Normalize a decryption key — 64 hex chars, else "0"
-//  SteamTools/OpenSteamTool expect this as the 3rd addappid arg.
-//  If a depot has no key, "0" is the correct placeholder.
 // ─────────────────────────────────────────────────────────────
 function normalizeKey(raw) {
     if (typeof raw !== 'string') return '0';
@@ -94,7 +140,13 @@ function normalizeKey(raw) {
     return '0';
 }
 
-function extractDepots(appEntry) {
+// ─────────────────────────────────────────────────────────────
+//  Extract depots — key resolution order:
+//    1. steamcmd.net depot.config.key / depot.key
+//    2. merged depotkeys.json map (depotId)
+//    3. "0"
+// ─────────────────────────────────────────────────────────────
+function extractDepots(appEntry, keyMap) {
     const out = [];
     if (!appEntry || !appEntry.depots) return out;
     for (const [depotId, depot] of Object.entries(appEntry.depots)) {
@@ -105,11 +157,9 @@ function extractDepots(appEntry) {
         const gid = publicManifest?.gid || publicManifest?.gid_string || null;
         if (!gid) continue;
 
-        // Decryption key locations seen in steamcmd.net output:
-        //   depot.config.key   (most common)
-        //   depot.key          (fallback)
-        const rawKey = depot?.config?.key || depot?.key || null;
-        const decryptionKey = normalizeKey(rawKey);
+        const apiKey = normalizeKey(depot?.config?.key || depot?.key || null);
+        const mapKey = keyMap.get(depotId) || null;
+        const decryptionKey = apiKey !== '0' ? apiKey : (mapKey ? normalizeKey(mapKey) : '0');
 
         out.push({
             depotId,
@@ -125,10 +175,10 @@ function extractDepots(appEntry) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Lua builder — correct format for SteamTools/OpenSteamTool:
+//  Lua builder — matches the working format:
 //    addappid(APPID)
-//    addappid(DEPOTID, 1, "DECRYPTION_KEY_HEX_64")
-//    setManifestid(DEPOTID, "MANIFEST_GID")
+//    addappid(DEPOTID, 1, "DECRYPTION_KEY")
+//    setManifestid(DEPOTID, "MANIFEST_GID", SIZE)
 // ─────────────────────────────────────────────────────────────
 function buildLua({ appid, name, depots, kind = 'APP' }) {
     const ts = new Date().toISOString();
@@ -145,9 +195,8 @@ function buildLua({ appid, name, depots, kind = 'APP' }) {
     if (depots.length) {
         lines.push('');
         for (const d of depots) {
-            // 3rd arg = depot decryption key (64 hex) or "0" if unencrypted
             lines.push(`addappid(${d.depotId}, 1, "${d.decryptionKey}")`);
-            lines.push(`setManifestid(${d.depotId}, "${d.gid}")`);
+            lines.push(`setManifestid(${d.depotId}, "${d.gid}", ${d.size || 0})`);
         }
     } else {
         lines.push('');
@@ -171,10 +220,10 @@ function buildManifestFile({ appid, appName, kind, depot }) {
         ` Depot ID   : ${depot.depotId}`,
         ` Depot Name : ${depot.name || 'Unnamed'}`,
         ` Manifest   : ${depot.gid}`,
-        ` Key        : ${depot.decryptionKey === '0' ? 'not available (public)' : depot.decryptionKey}`,
-        ` Encrypted  : ${depot.encrypted ? 'yes' : 'no'}`,
         ` Size       : ${depot.size} bytes`,
         ` Download   : ${depot.download} bytes`,
+        ` Key        : ${depot.decryptionKey === '0' ? 'not available' : depot.decryptionKey}`,
+        ` Encrypted  : ${depot.encrypted ? 'yes' : 'no'}`,
         ` Generated  : ${ts}`,
         '============================================================',
         '',
@@ -182,22 +231,30 @@ function buildManifestFile({ appid, appName, kind, depot }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Full pipeline — build the encrypted ZIP
+//  Full pipeline
 // ─────────────────────────────────────────────────────────────
 async function buildGenPackage(appid) {
     const warnings = [];
+
+    // ── Fetch depot key map first ──────────────────────────
+    console.log('[steamManifest] Fetching depot keys from public mirrors...');
+    const keyMap = await fetchDepotKeys();
+    if (keyMap.size === 0) {
+        warnings.push('Could not load any depot key mirrors — decryption keys may be missing.');
+    }
+
     const main = await fetchAppInfo(appid);
     if (!main) {
         throw new Error(`No SteamCMD data found for App ID ${appid}. The game may not be indexed.`);
     }
 
     const mainName = main?.common?.name || `App ${appid}`;
-    const mainDepots = extractDepots(main);
+    const mainDepots = extractDepots(main, keyMap);
     if (!mainDepots.length) warnings.push('Main app has no public depot manifests.');
 
-    const encryptedMain = mainDepots.filter(d => d.encrypted).length;
-    if (encryptedMain === 0 && mainDepots.length > 0) {
-        warnings.push('No depot decryption keys were exposed by the API for this app. Content may remain encrypted.');
+    const missingKeys = mainDepots.filter(d => d.decryptionKey === '0').length;
+    if (missingKeys > 0) {
+        warnings.push(`${missingKeys} depot(s) have no decryption key — content may stay encrypted.`);
     }
 
     const mainLua = buildLua({
@@ -224,7 +281,7 @@ async function buildGenPackage(appid) {
             continue;
         }
         const dlcName = dlcInfo?.common?.name || `DLC ${dlcId}`;
-        const dlcDepots = extractDepots(dlcInfo);
+        const dlcDepots = extractDepots(dlcInfo, keyMap);
         const dlcLua = buildLua({
             appid: String(dlcId),
             name: dlcName,
@@ -262,13 +319,11 @@ async function buildGenPackage(appid) {
     const blobWriter = new BlobWriter('application/zip');
     const zipWriter = new ZipWriter(blobWriter, {
         password,
-        encryptionStrength: 3, // 3 = AES-256
+        encryptionStrength: 3,
     });
 
-    // Main lua
     await zipWriter.add(`${appid}.lua`, new TextReader(mainLua));
 
-    // Main manifests
     for (const d of mainDepots) {
         await zipWriter.add(
             `manifests/${d.depotId}.manifest`,
@@ -281,7 +336,6 @@ async function buildGenPackage(appid) {
         );
     }
 
-    // Structured JSON
     const manifestsJson = {
         brand: BRAND,
         generated: new Date().toISOString(),
@@ -314,12 +368,10 @@ async function buildGenPackage(appid) {
     };
     await zipWriter.add('manifests.json', new TextReader(JSON.stringify(manifestsJson, null, 2)));
 
-    // Main EXE (root)
     if (exeBuffer) {
         await zipWriter.add(EXE_NAME, new Uint8ArrayReader(exeBuffer));
     }
 
-    // DLC folder + per-DLC EXE copy
     for (const d of dlcEntries) {
         if (d.lua) {
             await zipWriter.add(`dlc/${d.appid}.lua`, new TextReader(d.lua));
@@ -332,7 +384,6 @@ async function buildGenPackage(appid) {
         }
     }
 
-    // README (no extract.bat anymore)
     const readme = [
         `${BRAND}`,
         '============================================',
@@ -346,32 +397,26 @@ async function buildGenPackage(appid) {
         `  - ${appid}.lua`,
         `  - manifests/<depotId>.manifest`,
         `  - manifests.json`,
-        `  - ${EXE_NAME}  (loader)`,
+        `  - ${EXE_NAME}`,
         `  - dlc/<dlcid>.lua`,
         `  - dlc/<dlcid>-manifests/<depotId>.manifest`,
-        `  - dlc/${EXE_NAME}  (duplicate, for DLC-only extraction)`,
+        `  - dlc/${EXE_NAME}`,
         '',
         'HOW TO EXTRACT:',
         '  This archive is AES-256 password-protected.',
         '  The password is shown in the Discord message that delivered this zip.',
         '',
-        '  Option A (recommended):',
-        '    1. Install 7-Zip (https://7-zip.org)',
-        '    2. Right-click the .zip > 7-Zip > Extract Here',
-        '    3. Enter the password when prompted',
-        '',
-        '  Option B:',
-        '    Open the .zip in WinRAR, enter the password, extract.',
+        '  Use 7-Zip (https://7-zip.org) or WinRAR to extract.',
         '',
         'LUA FORMAT:',
         '  addappid(APPID)',
         '  addappid(DEPOTID, 1, "DECRYPTION_KEY")',
-        '  setManifestid(DEPOTID, "MANIFEST_GID")',
-        '  The 3rd argument on addappid is the depot decryption key.',
-        '  If a depot is unencrypted, the key is "0".',
+        '  setManifestid(DEPOTID, "MANIFEST_GID", SIZE)',
         '',
-        '  .manifest files are depot listings (ID + key + GID + size),',
-        '  not Steam CDN binary manifests.',
+        'SOURCES:',
+        '  Manifests: api.steamcmd.net',
+        '  Keys: ManifestHub public depotkeys.json mirrors',
+        '  (fylsdy/ManifestHub, wsxsdyx/ManifestHub1, SteamAutoCracks/ManifestHub)',
     ].join('\n');
     await zipWriter.add('README.txt', new TextReader(readme));
 
