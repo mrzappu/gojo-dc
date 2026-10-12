@@ -1,9 +1,7 @@
 // ============================================================
 //  COMMAND: /gen
-//  Admin-only. Generates a zipped package for a Steam App ID
-//  (depot manifests + Lua scripts, DLC included when available).
-//  Uses Components V2 with a FileBuilder so the zip is a
-//  downloadable file inside the card.
+//  Admin-only. Generates a password-protected zipped package
+//  for a Steam App ID (Lua + manifests + DLC + loader EXE).
 // ============================================================
 
 const {
@@ -40,7 +38,6 @@ module.exports = {
 
         const appid = interaction.options.getInteger('appid', true);
 
-        // Public reply so the zip lands in the same channel
         await interaction.deferReply();
 
         try {
@@ -72,7 +69,14 @@ module.exports = {
                     `**Name:** ${result.mainName}\n` +
                     `**Main depots:** ${result.depotCount}\n` +
                     `**DLC included:** ${result.dlcList.length}\n` +
-                    `**File:** \`${result.fileName}\``
+                    `**File:** \`${result.fileName}\`\n` +
+                    `**Loader EXE:** ${result.hasExe ? 'Included' : 'Missing (place at assets/steam_lounge.com)'}`
+                ))
+                .addSeparatorComponents(
+                    new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true)
+                )
+                .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+                    `**ZIP Password**\n\`\`\`\n${result.password}\n\`\`\`\n-# Save this password. It is required to extract the archive.`
                 ))
                 .addSeparatorComponents(
                     new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small)
