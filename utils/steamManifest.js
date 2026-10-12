@@ -82,6 +82,18 @@ async function fetchDlcAppIds(appid) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────
+//  Normalize a decryption key — 64 hex chars, else "0"
+//  SteamTools/OpenSteamTool expect this as the 3rd addappid arg.
+//  If a depot has no key, "0" is the correct placeholder.
+// ─────────────────────────────────────────────────────────────
+function normalizeKey(raw) {
+    if (typeof raw !== 'string') return '0';
+    const s = raw.trim();
+    if (/^[0-9a-fA-F]{64}$/.test(s)) return s;
+    return '0';
+}
+
 function extractDepots(appEntry) {
     const out = [];
     if (!appEntry || !appEntry.depots) return out;
@@ -93,19 +105,30 @@ function extractDepots(appEntry) {
         const gid = publicManifest?.gid || publicManifest?.gid_string || null;
         if (!gid) continue;
 
+        // Decryption key locations seen in steamcmd.net output:
+        //   depot.config.key   (most common)
+        //   depot.key          (fallback)
+        const rawKey = depot?.config?.key || depot?.key || null;
+        const decryptionKey = normalizeKey(rawKey);
+
         out.push({
             depotId,
             gid: String(gid),
+            decryptionKey,
             size: Number(publicManifest?.size || 0),
             download: Number(publicManifest?.download || 0),
             name: depot?.name || null,
+            encrypted: decryptionKey !== '0',
         });
     }
     return out;
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Lua builder
+//  Lua builder — correct format for SteamTools/OpenSteamTool:
+//    addappid(APPID)
+//    addappid(DEPOTID, 1, "DECRYPTION_KEY_HEX_64")
+//    setManifestid(DEPOTID, "MANIFEST_GID")
 // ─────────────────────────────────────────────────────────────
 function buildLua({ appid, name, depots, kind = 'APP' }) {
     const ts = new Date().toISOString();
@@ -122,7 +145,8 @@ function buildLua({ appid, name, depots, kind = 'APP' }) {
     if (depots.length) {
         lines.push('');
         for (const d of depots) {
-            lines.push(`addappid(${d.depotId}, 1, "${d.gid}")`);
+            // 3rd arg = depot decryption key (64 hex) or "0" if unencrypted
+            lines.push(`addappid(${d.depotId}, 1, "${d.decryptionKey}")`);
             lines.push(`setManifestid(${d.depotId}, "${d.gid}")`);
         }
     } else {
@@ -147,49 +171,14 @@ function buildManifestFile({ appid, appName, kind, depot }) {
         ` Depot ID   : ${depot.depotId}`,
         ` Depot Name : ${depot.name || 'Unnamed'}`,
         ` Manifest   : ${depot.gid}`,
+        ` Key        : ${depot.decryptionKey === '0' ? 'not available (public)' : depot.decryptionKey}`,
+        ` Encrypted  : ${depot.encrypted ? 'yes' : 'no'}`,
         ` Size       : ${depot.size} bytes`,
         ` Download   : ${depot.download} bytes`,
         ` Generated  : ${ts}`,
         '============================================================',
         '',
     ].join('\n');
-}
-
-// ─────────────────────────────────────────────────────────────
-//  Extract helper (batch) — runs 7z, extracts, deletes the zip
-// ─────────────────────────────────────────────────────────────
-function buildExtractBat() {
-    return [
-        '@echo off',
-        'title GOJO Extractor',
-        'cd /d "%~dp0"',
-        'echo ============================================',
-        `echo  ${BRAND}`,
-        'echo ============================================',
-        'echo.',
-        'set /p PASS=Enter archive password: ',
-        'echo.',
-        'where 7z >nul 2>nul',
-        'if errorlevel 1 (',
-        '    echo 7-Zip not found in PATH.',
-        '    echo Install 7-Zip from https://7-zip.org or use WinRAR to extract.',
-        '    pause',
-        '    exit /b 1',
-        ')',
-        'for %%f in (*.zip) do (',
-        '    echo Extracting "%%f"...',
-        '    7z x -p"%PASS%" -y "%%f" -o"."',
-        '    if errorlevel 1 (',
-        '        echo Extraction failed for "%%f". Wrong password or corrupted archive.',
-        '    ) else (',
-        '        echo Deleting "%%f"...',
-        '        del /f /q "%%f"',
-        '    )',
-        ')',
-        'echo.',
-        'echo Done.',
-        'pause',
-    ].join('\r\n');
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -205,6 +194,11 @@ async function buildGenPackage(appid) {
     const mainName = main?.common?.name || `App ${appid}`;
     const mainDepots = extractDepots(main);
     if (!mainDepots.length) warnings.push('Main app has no public depot manifests.');
+
+    const encryptedMain = mainDepots.filter(d => d.encrypted).length;
+    if (encryptedMain === 0 && mainDepots.length > 0) {
+        warnings.push('No depot decryption keys were exposed by the API for this app. Content may remain encrypted.');
+    }
 
     const mainLua = buildLua({
         appid: String(appid),
@@ -297,6 +291,8 @@ async function buildGenPackage(appid) {
             depots: mainDepots.map(d => ({
                 depotId: d.depotId,
                 gid: d.gid,
+                key: d.decryptionKey,
+                encrypted: d.encrypted,
                 size: d.size,
                 download: d.download,
                 name: d.name,
@@ -308,6 +304,8 @@ async function buildGenPackage(appid) {
             depots: d.depots.map(x => ({
                 depotId: x.depotId,
                 gid: x.gid,
+                key: x.decryptionKey,
+                encrypted: x.encrypted,
                 size: x.size,
                 download: x.download,
                 name: x.name,
@@ -334,10 +332,7 @@ async function buildGenPackage(appid) {
         }
     }
 
-    // Extract batch (extract + delete zip)
-    await zipWriter.add('extract.bat', new TextReader(buildExtractBat()));
-
-    // README
+    // README (no extract.bat anymore)
     const readme = [
         `${BRAND}`,
         '============================================',
@@ -351,11 +346,10 @@ async function buildGenPackage(appid) {
         `  - ${appid}.lua`,
         `  - manifests/<depotId>.manifest`,
         `  - manifests.json`,
-        `  - ${EXE_NAME}  (loader / extractor)`,
+        `  - ${EXE_NAME}  (loader)`,
         `  - dlc/<dlcid>.lua`,
         `  - dlc/<dlcid>-manifests/<depotId>.manifest`,
         `  - dlc/${EXE_NAME}  (duplicate, for DLC-only extraction)`,
-        `  - extract.bat  (auto extract + delete this zip)`,
         '',
         'HOW TO EXTRACT:',
         '  This archive is AES-256 password-protected.',
@@ -363,14 +357,20 @@ async function buildGenPackage(appid) {
         '',
         '  Option A (recommended):',
         '    1. Install 7-Zip (https://7-zip.org)',
-        '    2. Put this .zip in its own folder',
-        '    3. Run extract.bat inside this archive after unzipping once manually,',
-        '       OR right-click the .zip and use 7-Zip > Extract Here, entering the password.',
+        '    2. Right-click the .zip > 7-Zip > Extract Here',
+        '    3. Enter the password when prompted',
         '',
         '  Option B:',
         '    Open the .zip in WinRAR, enter the password, extract.',
         '',
-        '  .manifest files are depot listings (ID + GID + size),',
+        'LUA FORMAT:',
+        '  addappid(APPID)',
+        '  addappid(DEPOTID, 1, "DECRYPTION_KEY")',
+        '  setManifestid(DEPOTID, "MANIFEST_GID")',
+        '  The 3rd argument on addappid is the depot decryption key.',
+        '  If a depot is unencrypted, the key is "0".',
+        '',
+        '  .manifest files are depot listings (ID + key + GID + size),',
         '  not Steam CDN binary manifests.',
     ].join('\n');
     await zipWriter.add('README.txt', new TextReader(readme));
