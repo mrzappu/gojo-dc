@@ -2,7 +2,7 @@
 //  GOJO BOT — Steam Depot / Manifest Utility
 //  Uses api.steamcmd.net (public anonymous mirror) to fetch
 //  app + DLC depot manifests and build SteamTools-style Lua.
-//  Also generates a ZIP buffer containing all Lua files.
+//  Also generates a ZIP containing Lua + .manifest listings.
 // ============================================================
 
 const JSZip = require('jszip');
@@ -12,7 +12,6 @@ const API_BASE = 'https://api.steamcmd.net/v1/info';
 
 // ─────────────────────────────────────────────────────────────
 //  Fetch raw app info from steamcmd.net
-//  Returns: { appid, common, depots, ... } or null
 // ─────────────────────────────────────────────────────────────
 async function fetchAppInfo(appid) {
     try {
@@ -32,7 +31,6 @@ async function fetchAppInfo(appid) {
 
 // ─────────────────────────────────────────────────────────────
 //  Fetch DLC app IDs from Steam storefront appdetails
-//  Returns: array of string appids
 // ─────────────────────────────────────────────────────────────
 async function fetchDlcAppIds(appid) {
     try {
@@ -53,30 +51,32 @@ async function fetchDlcAppIds(appid) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Extract numeric depots + public manifest GIDs from an app entry
+//  Extract numeric depots + public manifest GID + sizes
 // ─────────────────────────────────────────────────────────────
 function extractDepots(appEntry) {
     const out = [];
     if (!appEntry || !appEntry.depots) return out;
     for (const [depotId, depot] of Object.entries(appEntry.depots)) {
-        // Skip non-numeric keys (branches, baselanguages, etc.) and depot 0
         if (!/^\d+$/.test(depotId)) continue;
         if (depotId === '0') continue;
 
-        const gid = depot?.manifests?.public?.gid
-            || depot?.manifests?.public?.gid_string
-            || null;
-
-        // Some entries only have a "manifests" object with no public branch
+        const publicManifest = depot?.manifests?.public;
+        const gid = publicManifest?.gid || publicManifest?.gid_string || null;
         if (!gid) continue;
 
-        out.push({ depotId, gid: String(gid) });
+        out.push({
+            depotId,
+            gid: String(gid),
+            size: Number(publicManifest?.size || 0),
+            download: Number(publicManifest?.download || 0),
+            name: depot?.name || null,
+        });
     }
     return out;
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Build a single Lua string for one app (with its depots)
+//  Build a Lua string for one app
 // ─────────────────────────────────────────────────────────────
 function buildLua({ appid, name, depots, kind = 'APP' }) {
     const ts = new Date().toISOString();
@@ -107,8 +107,30 @@ function buildLua({ appid, name, depots, kind = 'APP' }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Full pipeline: given a main appid, return
-//  { zipBuffer, fileName, mainName, depotCount, dlcList, warnings }
+//  Build a .manifest listing file (text) for a single depot
+// ─────────────────────────────────────────────────────────────
+function buildManifestFile({ appid, appName, kind, depot }) {
+    const ts = new Date().toISOString();
+    return [
+        '============================================================',
+        ` ${BRAND}`,
+        '============================================================',
+        ` Kind       : ${kind}`,
+        ` App ID     : ${appid}`,
+        ` App Name   : ${appName || 'Unknown'}`,
+        ` Depot ID   : ${depot.depotId}`,
+        ` Depot Name : ${depot.name || 'Unnamed'}`,
+        ` Manifest   : ${depot.gid}`,
+        ` Size       : ${depot.size} bytes`,
+        ` Download   : ${depot.download} bytes`,
+        ` Generated  : ${ts}`,
+        '============================================================',
+        '',
+    ].join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────
+//  Full pipeline
 // ─────────────────────────────────────────────────────────────
 async function buildGenPackage(appid) {
     const warnings = [];
@@ -119,7 +141,7 @@ async function buildGenPackage(appid) {
 
     const mainName = main?.common?.name || `App ${appid}`;
     const mainDepots = extractDepots(main);
-    if (!mainDepots.length) warnings.push(`Main app has no public depot manifests.`);
+    if (!mainDepots.length) warnings.push('Main app has no public depot manifests.');
 
     const mainLua = buildLua({
         appid: String(appid),
@@ -135,7 +157,13 @@ async function buildGenPackage(appid) {
     for (const dlcId of dlcIds) {
         const dlcInfo = await fetchAppInfo(dlcId);
         if (!dlcInfo) {
-            dlcEntries.push({ appid: dlcId, name: `DLC ${dlcId}`, depots: [], lua: null });
+            dlcEntries.push({
+                appid: dlcId,
+                name: `DLC ${dlcId}`,
+                depots: [],
+                lua: null,
+                manifestFiles: [],
+            });
             continue;
         }
         const dlcName = dlcInfo?.common?.name || `DLC ${dlcId}`;
@@ -146,33 +174,102 @@ async function buildGenPackage(appid) {
             depots: dlcDepots,
             kind: 'DLC',
         });
-        dlcEntries.push({ appid: String(dlcId), name: dlcName, depots: dlcDepots, lua: dlcLua });
+        const dlcManifestFiles = dlcDepots.map(d => ({
+            fileName: `${d.depotId}.manifest`,
+            content: buildManifestFile({
+                appid: dlcId,
+                appName: dlcName,
+                kind: 'DLC',
+                depot: d,
+            }),
+        }));
+        dlcEntries.push({
+            appid: String(dlcId),
+            name: dlcName,
+            depots: dlcDepots,
+            lua: dlcLua,
+            manifestFiles: dlcManifestFiles,
+        });
     }
 
     // ── Build ZIP ──────────────────────────────────────────
     const zip = new JSZip();
     zip.file(`${appid}.lua`, mainLua);
 
+    // Main manifests
+    const mainManifestFolder = zip.folder('manifests');
+    for (const d of mainDepots) {
+        mainManifestFolder.file(
+            `${d.depotId}.manifest`,
+            buildManifestFile({
+                appid: String(appid),
+                appName: mainName,
+                kind: 'MAIN APP',
+                depot: d,
+            })
+        );
+    }
+
+    // Structured JSON summary
+    const manifestsJson = {
+        brand: BRAND,
+        generated: new Date().toISOString(),
+        app: {
+            appid: String(appid),
+            name: mainName,
+            depots: mainDepots.map(d => ({
+                depotId: d.depotId,
+                gid: d.gid,
+                size: d.size,
+                download: d.download,
+                name: d.name,
+            })),
+        },
+        dlc: dlcEntries.map(d => ({
+            appid: d.appid,
+            name: d.name,
+            depots: d.depots.map(x => ({
+                depotId: x.depotId,
+                gid: x.gid,
+                size: x.size,
+                download: x.download,
+                name: x.name,
+            })),
+        })),
+    };
+    zip.file('manifests.json', JSON.stringify(manifestsJson, null, 2));
+
+    // DLC Lua + manifests
     const dlcFolder = zip.folder('dlc');
     for (const d of dlcEntries) {
         if (d.lua) dlcFolder.file(`${d.appid}.lua`, d.lua);
+        if (d.manifestFiles.length) {
+            const dlcManifestFolder = dlcFolder.folder(`${d.appid}-manifests`);
+            for (const mf of d.manifestFiles) {
+                dlcManifestFolder.file(mf.fileName, mf.content);
+            }
+        }
     }
 
-    // Small README inside the zip for brand + metadata
+    // README
     const readme = [
         `${BRAND}`,
-        `============================================`,
+        '============================================',
         `App ID: ${appid}`,
         `Name: ${mainName}`,
         `Depots (main): ${mainDepots.length}`,
         `DLC entries: ${dlcEntries.length}`,
         `Generated: ${new Date().toISOString()}`,
-        ``,
-        `Contents:`,
-        `  - ${appid}.lua         (main app)`,
-        `  - dlc/*.lua            (per-DLC lua files, if any)`,
-        ``,
-        `Drop the .lua files into your SteamTools / DepotDownloader config folder.`,
+        '',
+        'Contents:',
+        `  - ${appid}.lua`,
+        `  - manifests/<depotId>.manifest`,
+        `  - manifests.json`,
+        `  - dlc/<dlcid>.lua`,
+        `  - dlc/<dlcid>-manifests/<depotId>.manifest`,
+        '',
+        'Note: .manifest files are depot listings (ID + GID + size),',
+        'not Steam CDN binary manifests.',
     ].join('\n');
     zip.file('README.txt', readme);
 
