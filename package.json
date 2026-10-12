@@ -13,7 +13,7 @@
     "express": "^4.18.2",
     "sequelize": "^6.37.8",
     "sqlite3": "^5.1.7",
-    "jszip": "^3.10.1"
+    "@zip.js/zip.js": "^2.7.52"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
