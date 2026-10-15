@@ -19,6 +19,16 @@ module.exports = {
     name: 'interactionCreate',
     async execute(interaction, client) {
 
+        // ── Dynamic slash-command suggestions ──
+        if (interaction.isAutocomplete()) {
+            const command = client.commands.get(interaction.commandName);
+            if (command?.autocomplete) {
+                try { await command.autocomplete(interaction, client); }
+                catch (err) { console.error(`[Autocomplete Error] ${interaction.commandName}:`, err); try { await interaction.respond([]); } catch {} }
+            } else { try { await interaction.respond([]); } catch {} }
+            return;
+        }
+
         // ── Slash Commands ─────────────────────────────────────
         if (interaction.isChatInputCommand()) {
             const command = client.commands.get(interaction.commandName);
