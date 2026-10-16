@@ -61,7 +61,7 @@ module.exports = {
                 .setCustomId('ticket_create')
                 .setLabel('Order Game')
                 .setEmoji('1531286917755179220')
-                .setStyle(ButtonStyle.Primary)
+                .setStyle(ButtonStyle.Secondary)
         );
 
         container.addActionRowComponents(buttonRow);
