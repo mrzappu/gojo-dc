@@ -18,14 +18,15 @@ const {
 module.exports = {
     name: 'interactionCreate',
     async execute(interaction, client) {
-
-        // ── Dynamic slash-command suggestions ──
+        // Slash-command autocomplete (Steam and Epic game title suggestions)
         if (interaction.isAutocomplete()) {
             const command = client.commands.get(interaction.commandName);
-            if (command?.autocomplete) {
-                try { await command.autocomplete(interaction, client); }
+            if (command && typeof command.autocomplete === 'function') {
+                try { await command.autocomplete(interaction); }
                 catch (err) { console.error(`[Autocomplete Error] ${interaction.commandName}:`, err); try { await interaction.respond([]); } catch {} }
-            } else { try { await interaction.respond([]); } catch {} }
+            } else {
+                try { await interaction.respond([]); } catch {}
+            }
             return;
         }
 
