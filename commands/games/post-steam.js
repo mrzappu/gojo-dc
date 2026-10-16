@@ -163,6 +163,7 @@ module.exports = {
                 card.addSeparatorComponents(new SeparatorBuilder());
             }
 
+            // Keep this button identical to /post-epic: same animated emoji, label, and link style.
             const buyRow = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setEmoji({ name: 'ArrowShow', id: '1558870569066168360', animated: true })
