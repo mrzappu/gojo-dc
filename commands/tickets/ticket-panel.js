@@ -34,6 +34,24 @@ module.exports = {
             o.setName('description')
                 .setDescription('Custom panel description')
                 .setRequired(false)
+        )
+        .addStringOption(o =>
+            o.setName('button-label')
+                .setDescription('Custom text shown on the ticket button')
+                .setMaxLength(80)
+                .setRequired(false)
+        )
+        .addStringOption(o =>
+            o.setName('button-emoji')
+                .setDescription('Button emoji: Unicode emoji or custom emoji like <:name:id> / <a:name:id>')
+                .setMaxLength(100)
+                .setRequired(false)
+        )
+        .addStringOption(o =>
+            o.setName('footer')
+                .setDescription('Custom footer/note text (leave unset to use the default note)')
+                .setMaxLength(1000)
+                .setRequired(false)
         ),
 
     async execute(interaction) {
@@ -41,6 +59,10 @@ module.exports = {
         const title = interaction.options.getString('title') || 'Support Tickets';
         const desc  = interaction.options.getString('description') ||
             'Need help? Click the button below to open a private support ticket.\n\nOur staff team will assist you as soon as possible.';
+        const buttonLabel = interaction.options.getString('button-label') || 'Create Ticket';
+        const buttonEmoji = interaction.options.getString('button-emoji') || '1531286917755179220';
+        const footer = interaction.options.getString('footer') ||
+            'Note: Tickets are private. Only staff members can view and assist.';
 
         if (!targetChannel.isTextBased()) {
             return replyError(interaction, 'Please select a text channel.');
@@ -52,15 +74,13 @@ module.exports = {
             .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
             .addTextDisplayComponents(new TextDisplayBuilder().setContent(desc))
             .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small))
-            .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-                '-# Note: Tickets are private. Only staff members can view and assist.'
-            ));
+            .addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# ${footer}`));
 
         const buttonRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('ticket_create')
-                .setLabel('Create Ticket')
-                .setEmoji('1531286917755179220')
+                .setLabel(buttonLabel)
+                .setEmoji(parseButtonEmoji(buttonEmoji))
                 .setStyle(ButtonStyle.Secondary)
         );
 
@@ -76,3 +96,12 @@ module.exports = {
         });
     },
 };
+
+// Accept Unicode emoji, full custom emoji markup, or a custom emoji ID.
+function parseButtonEmoji(value) {
+    const input = String(value || '').trim();
+    const custom = input.match(/^<(?:(a):)?([A-Za-z0-9_]+):(\d+)>$/);
+    if (custom) return { id: custom[3], name: custom[2], animated: Boolean(custom[1]) };
+    if (/^\d{17,20}$/.test(input)) return { id: input };
+    return input;
+}
