@@ -140,7 +140,7 @@ When inviting the bot, make sure these permissions are granted:
 | Command | Permission | Description |
 |---|---|---|
 | `/ticket create` | Everyone | Open a new ticket |
-| `/ticket-panel [channel] [title] [desc]` | Manage Guild | Post ticket button panel |
+| `/ticket-panel [channel] [title] [description] [button-label] [button-emoji] [footer]` | Manage Guild | Post a customizable ticket panel |
 | `/ticket-manage claim` | Support Role | Claim/unclaim a ticket |
 | `/ticket-manage close [reason]` | Support Role | Close a ticket (generates transcript) |
 | `/ticket-manage reopen` | Support Role | Reopen a closed ticket |
@@ -154,7 +154,7 @@ When inviting the bot, make sure these permissions are granted:
 ## 🎫 Ticket System Flow
 
 ```
-Admin runs /ticket-panel → Panel posted with [Create Ticket] button
+Admin runs /ticket-panel → Customizable panel posted. Set title, description, button-label, button-emoji, and footer as needed.
          ↓
 User clicks button → Private ticket-username channel created
          ↓
