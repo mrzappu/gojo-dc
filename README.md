@@ -154,7 +154,7 @@ When inviting the bot, make sure these permissions are granted:
 ## 🎫 Ticket System Flow
 
 ```
-Admin runs /ticket-panel → Panel posted with [Open a Ticket] button
+Admin runs /ticket-panel → Panel posted with [Create Ticket] button
          ↓
 User clicks button → Private ticket-username channel created
          ↓
