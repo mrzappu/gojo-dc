@@ -18,7 +18,7 @@ const {
 module.exports = {
     name: 'interactionCreate',
     async execute(interaction, client) {
-        // Slash-command autocomplete (Steam and Epic game title suggestions)
+        // Slash-command autocomplete (Steam game title suggestions)
         if (interaction.isAutocomplete()) {
             const command = client.commands.get(interaction.commandName);
             if (command && typeof command.autocomplete === 'function') {
