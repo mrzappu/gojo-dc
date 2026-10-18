@@ -59,7 +59,7 @@ module.exports = {
         const buttonRow = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('ticket_create')
-                .setLabel('Order Game')
+                .setLabel('Create Ticket')
                 .setEmoji('1531286917755179220')
                 .setStyle(ButtonStyle.Secondary)
         );
