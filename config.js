@@ -60,87 +60,8 @@ module.exports = {
     AUTOMOD: {
         ENABLED: true,
 
-        // Toxic / banned words  (case-insensitive match)
-        TOXIC_WORDS: [
-
-            // ── English ────────────────────────────────────────────
-            'fuck', 'fucker', 'fucking', 'fuk', 'fck',
-            'shit', 'shitty', 'bullshit',
-            'bitch', 'bitches', 'son of a bitch',
-            'asshole', 'ass', 'arse',
-            'bastard', 'cunt', 'dick', 'pussy',
-            'whore', 'slut', 'hoe',
-            'nigger', 'nigga', 'niger',
-            'faggot', 'fag', 'gay insult',
-            'retard', 'idiot', 'moron', 'dumbass',
-            'motherfucker', 'mf', 'stfu', 'wtf',
-            'kill yourself', 'kys', 'die',
-
-            // ── Malayalam (Mallu) ──────────────────────────────────
-            // User requested
-            'thallevoli', 'thallevi', 'thalleyoli',
-            'ammeppanni', 'ammeyppanni', 'ammappanni',
-            'poori', 'poorii',
-            'thevidichi', 'thevidishy',
-            // Previously added
-            'myre', 'myru', 'mairuh',
-            'poolaya', 'poola',
-            'thendi', 'thanda',
-            'chemban', 'chembante',
-            'kunna', 'kunnan',
-            'pooru', 'poorru',
-            'thayoli', 'thayolli',
-            'thavidu', 'thavidichi',
-            'oombi', 'oombikko',
-            'punda', 'punde',
-            'mothalali',
-            'vaanam',
-            'kothachi',
-            'para', 'paraya',
-            'kazhuverimon',
-            'perinthevidichi',
-            'andi', 'andipooram',
-            'mondan', 'mandan',
-            'pottan',
-            'vevidichi',
-            'parayipetta',
-            'pulayan', 'pulayadi',
-
-            // ── Hindi ──────────────────────────────────────────────
-            'madarchod', 'madarcho', 'mc',
-            'behenchod', 'behen', 'bc',
-            'chutiya', 'chutiye', 'chut',
-            'bhosdike', 'bhosdika', 'bhosdi',
-            'gandu', 'gaandu',
-            'loda', 'lund', 'lauda',
-            'randi', 'randdi',
-            'haramzada', 'haramkhor', 'harami',
-            'saala', 'saali',
-            'bakrichod', 'gadha', 'ullu',
-            'kutta', 'kutti',
-            'kamina', 'kameena',
-            'lanat', 'besharam',
-            'teri maa ki', 'teri maa',
-            'hijda', 'hijra',
-            'nikamma', 'chirkut',
-            'teri behen', 'maa ki aankh',
-
-            // ── Tamil ──────────────────────────────────────────────
-            'oombu', 'ombu',
-            'pundai', 'punde',
-            'sunni', 'sunna',
-            'thevdiya', 'thevdia',
-            'koothi', 'kuthi',
-            'baadu', 'otha',
-            'paiyan', 'erumaikuthi',
-            'naaye', 'naye',
-            'loosu', 'palayan',
-            'sootha', 'soothadi',
-            'pavime', 'pavi',
-            'kanavan', 'kazhuthai',
-            'mudhaya', 'puzhuthida',
-            'sakkili', 'sakkiliya',
-        ],
+        // Toxic words are managed through /automod and data/automod-words.json.
+        TOXIC_WORDS: [],
 
         // Mass mention threshold — any message with this many or more @mentions
         MASS_MENTION_THRESHOLD: 5,
