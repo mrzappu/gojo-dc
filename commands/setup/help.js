@@ -12,11 +12,11 @@ const {
 const { CV2_FLAGS } = require('../../utils/embedBuilder');
 
 const GROUPS = [
-    { title: '🎮 Games & Store', names: ['post-steam', 'game', 'gen'] },
+    { title: '🎮 Games & Store', names: ['post-steam', '4x4', 'game', 'gen'] },
     { title: '🎫 Tickets', names: ['ticket-panel', 'ticket', 'ticket-manage'] },
     { title: '🛠️ Setup & Configuration', names: ['embed', 'config-view', 'rolesetup'] },
     { title: '🛡️ Moderation', names: ['ban', 'kick', 'timeout', 'untimeout', 'unban'] },
-    { title: '⚙️ Server Tools', names: ['sync', 'sync-emojis'] },
+    { title: '⚙️ Server Tools', names: ['sync'] },
 ];
 
 module.exports = {
@@ -58,7 +58,7 @@ module.exports = {
         }
         container.addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true));
         container.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-            `-# Total commands: ${available.size} • Use /sync to register commands to this server • Use /sync-emojis to upload the included icon pack`
+            `-# Total commands: ${available.size} • Use /sync to register commands to this server`
         ));
 
         return interaction.reply({ components: [container], flags: CV2_FLAGS | MessageFlags.Ephemeral });
