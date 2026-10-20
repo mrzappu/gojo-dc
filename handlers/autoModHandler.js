@@ -9,6 +9,13 @@ const config = require('../config');
 const { autoModEmbed } = require('../utils/embedBuilder');
 
 const db = require('../utils/database');
+const fs = require('node:fs');
+const path = require('node:path');
+
+function getCustomAutoModWords() {
+    try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'automod-words.json'), 'utf8')); }
+    catch { return { toxic: [], scam: [] }; }
+}
 
 // ─────────────────────────────────────────────────────────────
 //  Timeout helper — applies timeout + saves roles + adds blacklist
@@ -91,7 +98,9 @@ async function checkToxicWords(message) {
     if (!config.AUTOMOD.TOXIC_WORDS.length) return false;
 
     const content = message.content.toLowerCase();
-    const found = config.AUTOMOD.TOXIC_WORDS.some(word => content.includes(word.toLowerCase()));
+    const custom = getCustomAutoModWords();
+    const words = [...config.AUTOMOD.TOXIC_WORDS, ...(Array.isArray(custom.toxic) ? custom.toxic : [])];
+    const found = words.some(word => word && content.includes(word.toLowerCase()));
 
     if (!found) return false;
 
@@ -180,7 +189,9 @@ async function checkScam(message) {
         .toLowerCase();
 
     const fullText = `${content} ${attachmentText} ${embedText}`;
-    const found = config.AUTOMOD.SCAM_KEYWORDS.some(kw => fullText.includes(kw.toLowerCase()));
+    const custom = getCustomAutoModWords();
+    const keywords = [...config.AUTOMOD.SCAM_KEYWORDS, ...(Array.isArray(custom.scam) ? custom.scam : [])];
+    const found = keywords.some(kw => kw && fullText.includes(kw.toLowerCase()));
 
     if (!found) return false;
 
