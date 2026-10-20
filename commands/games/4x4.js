@@ -1,6 +1,6 @@
 // ============================================================
-// COMMAND: /4x4 — Publish four Steam games in one Components V2 card
-// Four equal-size gallery images, editable title/description/footer. Game names are used only to fetch images.
+// COMMAND: /4x4 — Publish 2–4 Steam games in one Components V2 card
+// Equal-size gallery images, editable title/description/footer. Game names are used only to fetch images.
 // This is a separate command and does not modify /post-steam.
 // ============================================================
 const {
@@ -33,12 +33,12 @@ function isStaff(interaction) {
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('4x4')
-        .setDescription('Post four Steam games with four equal-size images in one card (Staff only)')
+        .setDescription('Post 2–4 Steam games with equal-size images in one card (Staff only)')
         .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
         .addStringOption(o => o.setName('game1').setDescription('First Steam game').setAutocomplete(true).setRequired(true).setMaxLength(90))
-        .addStringOption(o => o.setName('game2').setDescription('Second Steam game').setAutocomplete(true).setRequired(true).setMaxLength(90))
-        .addStringOption(o => o.setName('game3').setDescription('Third Steam game').setAutocomplete(true).setRequired(true).setMaxLength(90))
-        .addStringOption(o => o.setName('game4').setDescription('Fourth Steam game').setAutocomplete(true).setRequired(true).setMaxLength(90))
+        .addStringOption(o => o.setName('game2').setDescription('Second Steam game (required; minimum 2 games)').setAutocomplete(true).setRequired(true).setMaxLength(90))
+        .addStringOption(o => o.setName('game3').setDescription('Third Steam game (optional)').setAutocomplete(true).setRequired(false).setMaxLength(90))
+        .addStringOption(o => o.setName('game4').setDescription('Fourth Steam game (optional)').setAutocomplete(true).setRequired(false).setMaxLength(90))
         .addStringOption(o => o.setName('title').setDescription('Editable card title').setRequired(false).setMaxLength(150))
         .addStringOption(o => o.setName('description').setDescription('Editable text shown under the title').setRequired(false).setMaxLength(1000))
         .addStringOption(o => o.setName('footer').setDescription('Editable footer text').setRequired(false).setMaxLength(200)),
@@ -58,7 +58,13 @@ module.exports = {
         if (!isStaff(interaction)) {
             return interaction.reply({ content: 'Only staff or the server owner can publish game cards.', ephemeral: true });
         }
-        const names = [1, 2, 3, 4].map(i => interaction.options.getString(`game${i}`, true).trim());
+        const names = [1, 2, 3, 4]
+            .map(i => interaction.options.getString(`game${i}`))
+            .filter(name => typeof name === 'string' && name.trim().length > 0)
+            .map(name => name.trim());
+        if (names.length < 2) {
+            return interaction.reply({ content: 'Please select at least 2 games. You can add game3 and game4 if you want 3 or 4 images.', ephemeral: true });
+        }
         const title = interaction.options.getString('title') || '🎮 STEAM GAME COLLECTION';
         const description = interaction.options.getString('description') || 'Choose your favourite game from our collection.';
         const footer = interaction.options.getString('footer') || "© GOJO'S STEAM LOUNGE • All rights reserved.";
@@ -79,7 +85,7 @@ module.exports = {
             if (missingImages.length) {
                 return interaction.editReply(`Steam did not return an image for: **${missingImages.join(', ')}**. Try a different game title.`);
             }
-            // Always add all four images, in the same gallery, so Discord displays them together.
+            // Add only the selected 2–4 images to one gallery, so Discord displays them together.
             const galleryItems = games.map((game, i) =>
                 new MediaGalleryItemBuilder().setURL(game.header).setDescription(`Game image ${i + 1}`)
             );
@@ -93,7 +99,6 @@ module.exports = {
                     .setStyle(ButtonStyle.Link)
                     .setURL('https://discord.com/channels/1519204760316809297/1526896976505864214')
             );
-            card.addSeparatorComponents(new SeparatorBuilder());
             card.addActionRowComponents(buyRow);
             card.addSeparatorComponents(new SeparatorBuilder());
             card.addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# ${footer}`));
@@ -103,10 +108,10 @@ module.exports = {
                 components: [card],
                 allowedMentions: { parse: [] },
             });
-            return interaction.editReply('Published the 4-image card successfully.');
+            return interaction.editReply(`Published the ${games.length}-image card successfully.`);
         } catch (error) {
             console.error('/4x4 card failed:', error?.stack || error);
-            return interaction.editReply('Could not publish the 4-game card. Check the bot logs and try again.');
+            return interaction.editReply('Could not publish the game card. Check the bot logs and try again.');
         }
     },
 };
