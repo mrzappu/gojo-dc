@@ -59,8 +59,7 @@ module.exports = {
     // ─────────────────────────────────────────────────────────
     AUTOMOD: {
         ENABLED: true,
-
-        // Toxic words are managed through /automod and data/automod-words.json.
+        // Toxic words are managed only through /automod and data/automod-words.json.
         TOXIC_WORDS: [],
 
         // Mass mention threshold — any message with this many or more @mentions
@@ -97,7 +96,6 @@ module.exports = {
     // ─────────────────────────────────────────────────────────
     TICKETS: {
         MAX_PER_USER: 1,                // Max open tickets per user
-        INACTIVITY_CLOSE_HOURS: 48,     // Auto-close after 48h inactivity (set 0 to disable)
         TRANSCRIPT_STYLE: 'html',       // 'html' — rich HTML file
     },
 
