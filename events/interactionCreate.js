@@ -74,15 +74,24 @@ module.exports = {
             if (ticketButtonMap[id]) {
                 // Check permissions for management buttons
                 if (['ticket_claim', 'ticket_close', 'ticket_reopen', 'ticket_delete', 'ticket_transcript', 'ticket_add_user', 'ticket_remove_user'].includes(id)) {
-                    const isSupport = interaction.member.roles.cache.has(require('../config').ROLES.TICKET_SUPPORT)
-                        || interaction.member.roles.cache.has(require('../config').ROLES.TICKET_ADMIN)
-                        || interaction.member.permissions.has('ManageChannels');
+                    const roles = require('../config').ROLES;
+                    const memberRoles = interaction.member?.roles?.cache;
+                    const isSupport = interaction.memberPermissions?.has('ManageChannels')
+                        || (roles.TICKET_SUPPORT && memberRoles?.has(roles.TICKET_SUPPORT))
+                        || (roles.TICKET_ADMIN && memberRoles?.has(roles.TICKET_ADMIN));
 
                     if (!isSupport && id !== 'ticket_close') {
                         return interaction.reply({ content: '❌ You do not have permission to use this.', ephemeral: true });
                     }
                 }
-                return ticketButtonMap[id](interaction);
+                try {
+                    return await ticketButtonMap[id](interaction);
+                } catch (err) {
+                    console.error(`[Ticket Button Error] ${id}:`, err);
+                    const payload = { content: '❌ This ticket action failed. Please check the bot permissions and try again.', ephemeral: true };
+                    try { if (interaction.deferred || interaction.replied) await interaction.followUp(payload); else await interaction.reply(payload); } catch {}
+                    return;
+                }
             }
         }
 
