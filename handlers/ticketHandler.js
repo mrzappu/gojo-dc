@@ -29,6 +29,40 @@ const db = require('../utils/database');
 //  Prevents "Supplied parameter is not a cached User or Role"
 //  when a role ID is a placeholder, missing, or not yet cached.
 // ─────────────────────────────────────────────────────────────
+async function getTicketOrRecover(channel) {
+    let ticket = await db.getTicket(channel.id).catch(() => null);
+    if (ticket || !channel.guild) return ticket;
+
+    // Recover metadata for older ticket channels when a redeploy or lost SQLite file
+    // left the channel behind but removed its database row.
+    const ownerOverwrite = channel.permissionOverwrites.cache.find(overwrite =>
+        overwrite.type === 1 && overwrite.id !== channel.client.user.id &&
+        overwrite.allow.has(PermissionFlagsBits.ViewChannel)
+    );
+    if (!ownerOverwrite) return null;
+    const owner = await channel.client.users.fetch(ownerOverwrite.id).catch(() => null);
+    if (!owner) return null;
+    const recovered = {
+        channelId: channel.id,
+        userId: owner.id,
+        userTag: owner.tag || owner.username,
+        guildId: channel.guild.id,
+        claimedBy: null,
+        closed: channel.permissionOverwrites.cache.get(owner.id)?.deny.has(PermissionFlagsBits.SendMessages) || false,
+        closedAt: null,
+        closedBy: null,
+        reason: 'Recovered after bot redeploy',
+    };
+    try {
+        await db.saveTicket(recovered);
+        ticket = await db.getTicket(channel.id);
+        return ticket || recovered;
+    } catch (error) {
+        console.error('[TicketHandler] Could not recover ticket record:', error.message);
+        return recovered;
+    }
+}
+
 async function resolveRole(guild, roleId) {
     if (!roleId) return null;
     if (typeof roleId !== 'string') return null;
@@ -103,12 +137,17 @@ async function createTicket(interaction) {
     // Check existing open ticket from DB
     const existing = await db.getOpenTicketByUser(user.id);
     if (existing) {
-        return interaction.reply({
-            components: [new ContainerBuilder().addTextDisplayComponents(
-                new TextDisplayBuilder().setContent(`❌ You already have an open ticket: <#${existing.channelId}>`)
-            )],
-            flags: CV2_FLAGS | MessageFlags.Ephemeral,
-        });
+        // A deleted/missing channel can leave an old open row in SQLite after a redeploy.
+        const existingChannel = await guild.channels.fetch(existing.channelId).catch(() => null);
+        if (existingChannel) {
+            return interaction.reply({
+                components: [new ContainerBuilder().addTextDisplayComponents(
+                    new TextDisplayBuilder().setContent(`❌ You already have an open ticket: <#${existing.channelId}>`)
+                )],
+                flags: CV2_FLAGS | MessageFlags.Ephemeral,
+            });
+        }
+        await db.deleteTicket(existing.channelId).catch(() => {});
     }
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -195,6 +234,7 @@ async function createTicket(interaction) {
     container.addActionRowComponents(buttonsRow);
 
     await ticketChannel.send({ components: [container], flags: CV2_FLAGS });
+    const savedTicket = await db.getTicket(ticketChannel.id);
 
     // Log to open channel
     await sendTicketLog(guild, ticketLogEmbed({
@@ -210,6 +250,8 @@ async function createTicket(interaction) {
         )],
         flags: CV2_FLAGS,
     });
+
+    await user.send(`🎫 Your support ticket has been created in **${guild.name}**: <#${ticketChannel.id}>. Please reply in the ticket so our staff can help you.`).catch(() => {});
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -217,9 +259,9 @@ async function createTicket(interaction) {
 // ─────────────────────────────────────────────────────────────
 async function claimTicket(interaction) {
     const { channel, user } = interaction;
-    const ticket = await db.getTicket(channel.id);
+    const ticket = await getTicketOrRecover(channel);
 
-    if (!ticket) return interaction.reply({ content: 'Not a valid ticket channel.', flags: 64 });
+    if (!ticket) return interaction.reply({ content: 'This channel is not recognized as a ticket. Please recreate it from the ticket panel.', ephemeral: true }).catch(() => {});
 
     if (ticket.claimedBy && ticket.claimedBy !== user.id) {
         return interaction.reply({
@@ -261,8 +303,8 @@ async function claimTicket(interaction) {
 // ─────────────────────────────────────────────────────────────
 async function closeTicket(interaction) {
     const { channel, user, guild } = interaction;
-    const ticket = await db.getTicket(channel.id);
-    if (!ticket) return interaction.reply({ content: 'Not a valid ticket channel.', flags: 64 });
+    const ticket = await getTicketOrRecover(channel);
+    if (!ticket) return interaction.reply({ content: 'This channel is not recognized as a ticket. Please recreate it from the ticket panel.', ephemeral: true }).catch(() => {});
 
     // Update DB
     await db.updateTicket(channel.id, {
@@ -295,7 +337,7 @@ async function closeTicket(interaction) {
     await interaction.update({ components: [container], flags: CV2_FLAGS });
 
     // Auto-generate transcript on close
-    const freshTicket = await db.getTicket(channel.id);
+    const freshTicket = await getTicketOrRecover(channel);
     await generateAndSendTranscript(channel, guild, user, freshTicket || ticket);
 
     // Log to close channel
@@ -312,7 +354,7 @@ async function closeTicket(interaction) {
 // ─────────────────────────────────────────────────────────────
 async function reopenTicket(interaction) {
     const { channel, user, guild } = interaction;
-    const ticket = await db.getTicket(channel.id);
+    const ticket = await getTicketOrRecover(channel);
     if (!ticket) return interaction.reply({ content: 'Not a valid ticket channel.', flags: 64 });
 
     // Update DB
@@ -354,7 +396,7 @@ async function reopenTicket(interaction) {
 // ─────────────────────────────────────────────────────────────
 async function deleteTicket(interaction) {
     const { channel, user, guild } = interaction;
-    const ticket = await db.getTicket(channel.id);
+    const ticket = await getTicketOrRecover(channel);
     if (!ticket) return interaction.reply({ content: 'Not a valid ticket channel.', flags: 64 });
 
     await interaction.reply({
@@ -383,7 +425,7 @@ async function deleteTicket(interaction) {
 // ─────────────────────────────────────────────────────────────
 async function transcriptTicket(interaction) {
     const { channel, user, guild } = interaction;
-    const ticket = await db.getTicket(channel.id);
+    const ticket = await getTicketOrRecover(channel);
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     await generateAndSendTranscript(channel, guild, user, ticket || { userTag: 'Unknown', userId: '0', createdAt: new Date() });
@@ -401,7 +443,7 @@ async function transcriptTicket(interaction) {
 // ─────────────────────────────────────────────────────────────
 async function addUser(interaction) {
     const { channel } = interaction;
-    const ticket = await db.getTicket(channel.id);
+    const ticket = await getTicketOrRecover(channel);
     if (!ticket) return interaction.reply({ content: 'Not a valid ticket channel.', flags: 64 });
 
     const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
@@ -425,7 +467,7 @@ async function addUser(interaction) {
 // ─────────────────────────────────────────────────────────────
 async function removeUser(interaction) {
     const { channel } = interaction;
-    const ticket = await db.getTicket(channel.id);
+    const ticket = await getTicketOrRecover(channel);
     if (!ticket) return interaction.reply({ content: 'Not a valid ticket channel.', flags: 64 });
 
     const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
@@ -476,7 +518,7 @@ async function handleAddUserModal(interaction) {
 
 async function handleRemoveUserModal(interaction) {
     const { channel } = interaction;
-    const ticket = await db.getTicket(channel.id);
+    const ticket = await getTicketOrRecover(channel);
     const rawId  = interaction.fields.getTextInputValue('user_id_input').replace(/[<@!>]/g, '');
 
     if (ticket && rawId === ticket.userId) {

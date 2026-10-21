@@ -95,11 +95,10 @@ async function warnUser(member, reason) {
 // ─────────────────────────────────────────────────────────────
 async function checkToxicWords(message) {
     if (!config.AUTOMOD.ENABLED) return false;
-    if (!config.AUTOMOD.TOXIC_WORDS.length) return false;
 
     const content = message.content.toLowerCase();
     const custom = getCustomAutoModWords();
-    const words = [...config.AUTOMOD.TOXIC_WORDS, ...(Array.isArray(custom.toxic) ? custom.toxic : [])];
+    const words = [...(Array.isArray(custom.toxic) ? custom.toxic : [])];
     const found = words.some(word => word && content.includes(word.toLowerCase()));
 
     if (!found) return false;
