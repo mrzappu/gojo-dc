@@ -54,6 +54,63 @@ module.exports = {
         if (interaction.isButton()) {
             const id = interaction.customId;
 
+            // Customer confirmation for an admin-created purchase vouch.
+            if (id.startsWith('vouch_confirm:')) {
+                const { Vouch, VouchRequest } = require('../utils/database');
+                const requestId = id.slice('vouch_confirm:'.length);
+                const request = await VouchRequest.findByPk(requestId);
+                if (!request || request.guildId !== interaction.guildId || request.channelId !== interaction.channelId) {
+                    return interaction.reply({ content: 'This vouch request could not be found. Ask an admin to create a new one.', ephemeral: true });
+                }
+                if (interaction.user.id !== request.userId) {
+                    return interaction.reply({ content: 'Only the customer named in this request can confirm it.', ephemeral: true });
+                }
+                if (request.status !== 'pending') {
+                    return interaction.reply({ content: request.status === 'confirmed' ? 'This vouch has already been confirmed.' : 'This vouch request is no longer active.', ephemeral: true });
+                }
+                if (request.transactionId) {
+                    const existing = await Vouch.findOne({ where: { guildId: request.guildId, userId: request.userId, transactionId: request.transactionId } });
+                    if (existing) {
+                        await request.update({ status: 'duplicate' });
+                        return interaction.reply({ content: 'This transaction ID already has a vouch recorded. No duplicate was added.', ephemeral: true });
+                    }
+                }
+                await Vouch.create({
+                    guildId: request.guildId,
+                    userId: request.userId,
+                    adminId: request.adminId,
+                    productName: request.productName,
+                    quantity: request.quantity,
+                    unitPrice: request.unitPrice,
+                    totalPrice: request.totalPrice,
+                    paymentMethod: request.paymentMethod || 'Not specified',
+                    transactionId: request.transactionId,
+                });
+                await request.update({ status: 'confirmed' });
+
+                const { ContainerBuilder, TextDisplayBuilder, SeparatorBuilder, SeparatorSpacingSize } = require('discord.js');
+                const confirmedCard = new ContainerBuilder()
+                    .addTextDisplayComponents(new TextDisplayBuilder().setContent('## ✅ LEGIT PURCHASED'))
+                    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
+                    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+                        `**Customer**\n<@${request.userId}>\n\n` +
+                        `**Product**\n${request.productName}\n\n` +
+                        `**Quantity**\n×${request.quantity}\n\n` +
+                        `**Total Price**\n₹${Number(request.totalPrice).toFixed(2)} (₹${Number(request.unitPrice).toFixed(2)} each)\n\n` +
+                        `**Payment Method**\n${request.paymentMethod || 'Not specified'}\n\n` +
+                        `**Transaction ID**\n${request.transactionId || 'Not provided'}`
+                    ))
+                    .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
+                    .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+                        `**Copyable Vouch Format**\n` +
+                        `\`+rep ${request.userId} LEGIT PURCHASED ${request.quantity}X ${String(request.productName).replace(/[\r\n]/g, ' ').toUpperCase()} FOR ₹${Number(request.totalPrice).toFixed(2)} [${String(request.paymentMethod || 'PAYMENT').replace(/[\r\n\[\]]/g, ' ')}]\`\n\n` +
+                        `-# Purchase confirmed by <@${request.userId}> • Vouch requested by <@${request.adminId}> • GOJO Verified Vouch`
+                    ));
+                await interaction.update({ components: [confirmedCard] });
+                await interaction.user.send(`Your purchase vouch has been confirmed and added to your profile.\nProduct: ${request.productName} ×${request.quantity}\nTotal: ₹${Number(request.totalPrice).toFixed(2)}\nPayment: ${request.paymentMethod || 'Not specified'}\nThank you!`).catch(() => {});
+                return;
+            }
+
             // Ticket panel — open a new ticket
             if (id === 'ticket_create') {
                 const { createTicket } = require('../handlers/ticketHandler');
