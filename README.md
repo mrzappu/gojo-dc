@@ -234,3 +234,17 @@ Staff clicks [Close] → Transcript generated → Posted in #transcript-log
 ---
 
 *GOJO Bot — Built with Discord.js v14 • Matching Infinity Music Bot aesthetics*
+
+## Verified Purchase Vouch System
+
+Set these optional environment variables in your hosting panel before restarting the bot:
+
+- `VOUCH_CHANNEL_ID` — the one channel where `/vouch-req`, `/vouch`, and `-p @member` are allowed.
+- `VOUCH_TICK_EMOJI_ID` — optional custom/animated tick emoji ID. Leave unset to use ✅. The bot must be able to use the custom emoji.
+
+Admins with **Manage Server** can run `/vouch-req` in the configured channel and provide the customer, product name, quantity, unit price, and optional transaction ID. The customer must click **Confirm Vouch** before it is recorded. `/vouch member:@user` and `-p @user` show confirmed vouch totals and product details. Vouch data is stored in the persistent SQLite database (`gojo.db`), so retain that file across redeploys.
+
+
+
+### Vouch feedback update
+Admins with Manage Server can use `-rep @member reason` in the configured vouch channel. The bot deletes the command message and posts a Components V2 feedback card. The `/vouch` profile shows confirmed purchases and admin-recorded feedback. Confirmed purchase cards include a copyable `+rep USER_ID LEGIT PURCHASED ...` format. Keep `gojo.db` on persistent storage.

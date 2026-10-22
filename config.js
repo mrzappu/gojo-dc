@@ -92,6 +92,15 @@ module.exports = {
     },
 
     // ─────────────────────────────────────────────────────────
+    //  VOUCH SYSTEM — set VOUCH_CHANNEL_ID in your environment
+    // ─────────────────────────────────────────────────────────
+    VOUCH: {
+        CHANNEL_ID: process.env.VOUCH_CHANNEL_ID || '',
+        // Optional custom animated tick emoji ID; leave empty to use a normal check mark.
+        TICK_EMOJI_ID: process.env.VOUCH_TICK_EMOJI_ID || '',
+    },
+
+    // ─────────────────────────────────────────────────────────
     //  TICKET SETTINGS
     // ─────────────────────────────────────────────────────────
     TICKETS: {
