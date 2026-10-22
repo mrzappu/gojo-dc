@@ -128,6 +128,46 @@ const GamePrice = sequelize.define('GamePrice', {
 });
 
 // ─────────────────────────────────────────────────────────────
+// MODEL: Vouch and pending VouchRequest
+// ─────────────────────────────────────────────────────────────
+const Vouch = sequelize.define('Vouch', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    guildId: { type: DataTypes.STRING, allowNull: false },
+    userId: { type: DataTypes.STRING, allowNull: false },
+    adminId: { type: DataTypes.STRING, allowNull: false },
+    productName: { type: DataTypes.STRING, allowNull: false },
+    quantity: { type: DataTypes.INTEGER, allowNull: false },
+    unitPrice: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+    totalPrice: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+    transactionId: { type: DataTypes.STRING, allowNull: true },
+    paymentMethod: { type: DataTypes.STRING, allowNull: true, defaultValue: 'Not specified' },
+}, { tableName: 'vouches', timestamps: true });
+
+const VouchFeedback = sequelize.define('VouchFeedback', {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    guildId: { type: DataTypes.STRING, allowNull: false },
+    userId: { type: DataTypes.STRING, allowNull: false },
+    adminId: { type: DataTypes.STRING, allowNull: false },
+    reason: { type: DataTypes.STRING(1000), allowNull: false },
+}, { tableName: 'vouch_feedback', timestamps: true });
+
+const VouchRequest = sequelize.define('VouchRequest', {
+    id: { type: DataTypes.STRING, primaryKey: true, allowNull: false },
+    guildId: { type: DataTypes.STRING, allowNull: false },
+    channelId: { type: DataTypes.STRING, allowNull: false },
+    messageId: { type: DataTypes.STRING, allowNull: false },
+    userId: { type: DataTypes.STRING, allowNull: false },
+    adminId: { type: DataTypes.STRING, allowNull: false },
+    productName: { type: DataTypes.STRING, allowNull: false },
+    quantity: { type: DataTypes.INTEGER, allowNull: false },
+    unitPrice: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+    totalPrice: { type: DataTypes.DECIMAL(12, 2), allowNull: false },
+    transactionId: { type: DataTypes.STRING, allowNull: true },
+    paymentMethod: { type: DataTypes.STRING, allowNull: true, defaultValue: 'Not specified' },
+    status: { type: DataTypes.STRING, allowNull: false, defaultValue: 'pending' },
+}, { tableName: 'vouch_requests', timestamps: true });
+
+// ─────────────────────────────────────────────────────────────
 //  HELPERS
 // ─────────────────────────────────────────────────────────────
 async function initDatabase() {
@@ -214,6 +254,9 @@ module.exports = {
     Ticket,
     MemberTimeout,
     GamePrice,
+    Vouch,
+    VouchRequest,
+    VouchFeedback,
     initDatabase,
     saveTicket,
     getTicket,
